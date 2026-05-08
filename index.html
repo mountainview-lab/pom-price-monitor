@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POM企业价格仪表盘</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"Microsoft YaHei",sans-serif;background:#f0f2f5;color:#333}
+.header{background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff;padding:20px 30px}
+.header h1{font-size:22px;margin-bottom:6px}
+.header .meta{font-size:13px;opacity:.8}
+.container{max-width:1400px;margin:0 auto;padding:20px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tab{padding:8px 16px;border:none;border-radius:20px;background:#fff;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.tab.active{background:#1a73e8;color:#fff}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px}
+.card{background:#fff;border-radius:10px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.card .label{font-size:13px;color:#888;margin-bottom:6px}
+.card .value{font-size:24px;font-weight:700;color:#1a73e8}
+.chart-box{background:#fff;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.08);margin-bottom:20px}
+.chart-box h3{font-size:16px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #eee}
+.chart{width:100%;height:400px}
+.table-box{background:#fff;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.08);overflow-x:auto}
+.table-box h3{font-size:16px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;min-width:600px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #f0f0f0;font-size:14px}
+th{background:#fafafa;font-weight:600;color:#555}
+tr:hover{background:#f8f9ff}
+.price-up{color:#e53935;font-weight:600}
+.price-down{color:#43a047;font-weight:600}
+.footer{text-align:center;padding:20px;color:#aaa;font-size:12px}
+.loading{text-align:center;padding:40px;color:#888}
+.error{background:#fff3cd;color:#856404;padding:20px;border-radius:8px;margin:20px 0}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📊 POM企业价格仪表盘</h1>
+  <div class="meta" id="meta">加载中...</div>
+</div>
+<div class="container">
+  <div class="tabs" id="tabs"></div>
+  <div class="cards" id="cards"></div>
+  <div class="chart-box">
+    <h3>📈 价格走势</h3>
+    <div class="chart" id="trendChart"></div>
+  </div>
+  <div class="chart-box">
+    <h3>📊 最新价格对比</h3>
+    <div class="chart" id="compareChart" style="height:320px"></div>
+  </div>
+  <div class="table-box">
+    <h3>📋 最新价格明细</h3>
+    <table>
+      <thead><tr><th>规格</th><th>企业</th><th>地区</th><th>价格(元/吨)</th><th>日期</th></tr></thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+<div class="footer">数据来源：隆众资讯网 | 自动更新</div>
+
+<script>
+let DATA = [];
+let currentSpec = '';
+
+// 加载数据
+async function loadData() {
+  try {
+    const res = await fetch('data/prices.json?t=' + Date.now());
+    DATA = await res.json();
+    render();
+  } catch (e) {
+    document.getElementById('meta').textContent = '数据加载失败，请稍后刷新';
+    document.getElementById('cards').innerHTML = '<div class="error">无法加载数据文件，请检查数据是否已更新</div>';
+  }
+}
+
+// 获取唯一值
+function unique(arr) {
+  return [...new Set(arr)];
+}
+
+// 渲染
+function render() {
+  if (!DATA.length) return;
+  
+  const dates = unique(DATA.map(r => r.price_date)).sort();
+  const specs = unique(DATA.map(r => r.specification)).sort();
+  const latestDate = dates[dates.length - 1];
+  const latest = DATA.filter(r => r.price_date === latestDate);
+  const filtered = currentSpec ? latest.filter(r => r.specification === currentSpec) : latest;
+  
+  // 统计
+  const prices = filtered.map(r => r.price_avg).filter(p => p > 100);
+  const minP = prices.length ? Math.min(...prices) : 0;
+  const maxP = prices.length ? Math.max(...prices) : 0;
+  const avgP = prices.length ? Math.round(prices.reduce((a,b)=>a+b,0)/prices.length) : 0;
+  
+  // 元信息
+  document.getElementById('meta').textContent = `数据日期: ${latestDate} | 监控企业: ${unique(latest.map(r=>r.brand)).length}家 | 规格: ${specs.length}种`;
+  
+  // Tab
+  document.getElementById('tabs').innerHTML = 
+    `<button class="tab ${currentSpec==''?'active':''}" onclick="switchSpec('')">全部</button>` +
+    specs.map(s => `<button class="tab ${currentSpec==s?'active':''}" onclick="switchSpec('${s}')">${s}</button>`).join('');
+  
+  // 卡片
+  document.getElementById('cards').innerHTML = `
+    <div class="card"><div class="label">📅 数据日期</div><div class="value">${latestDate}</div></div>
+    <div class="card"><div class="label">💰 最低价</div><div class="value">${minP.toLocaleString()}</div></div>
+    <div class="card"><div class="label">📊 最高价</div><div class="value">${maxP.toLocaleString()}</div></div>
+    <div class="card"><div class="label">📈 平均价</div><div class="value">${avgP.toLocaleString()}</div></div>
+    <div class="card"><div class="label">🏭 企业数</div><div class="value">${unique(filtered.map(r=>r.brand)).length}</div></div>
+  `;
+  
+  // 图表
+  if (typeof echarts !== 'undefined') {
+    renderCharts(filtered, dates);
+  }
+  
+  // 表格
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = filtered.map(r => `
+    <tr>
+      <td>${r.specification}</td>
+      <td>${r.brand}</td>
+      <td>${r.region || '-'}</td>
+      <td class="${r.price_avg==minP?'price-down':r.price_avg==maxP?'price-up':''}">${r.price_avg.toLocaleString()}</td>
+      <td>${r.price_date}</td>
+    </tr>
+  `).join('');
+}
+
+function switchSpec(spec) {
+  currentSpec = spec;
+  render();
+}
+
+function renderCharts(filtered, dates) {
+  const brands = unique(filtered.map(r => r.brand));
+  const colors = ['#1a73e8','#e53935','#43a047','#fb8c00','#8e24aa','#00acc1','#f06292','#7cb342'];
+  
+  // 走势图
+  const trendChart = echarts.init(document.getElementById('trendChart'));
+  trendChart.setOption({
+    tooltip: {trigger: 'axis'},
+    legend: {data: brands, top: 0, type: 'scroll'},
+    grid: {left: 50, right: 20, top: 40, bottom: 30},
+    xAxis: {type: 'category', data: dates},
+    yAxis: {type: 'value', name: '元/吨'},
+    series: brands.map((brand, i) => ({
+      name: brand,
+      type: 'line',
+      smooth: true,
+      itemStyle: {color: colors[i % colors.length]},
+      data: dates.map(date => {
+        const r = DATA.find(d => d.brand === brand && d.price_date === date && (!currentSpec || d.specification === currentSpec));
+        return r && r.price_avg > 100 ? r.price_avg : null;
+      })
+    }))
+  });
+  
+  // 对比图
+  const compareChart = echarts.init(document.getElementById('compareChart'));
+  const compareData = filtered.filter(r => r.price_avg > 100).sort((a,b) => a.price_avg - b.price_avg);
+  compareChart.setOption({
+    tooltip: {trigger: 'axis'},
+    grid: {left: 120, right: 40, top: 10, bottom: 30},
+    xAxis: {type: 'value', name: '元/吨'},
+    yAxis: {type: 'category', data: compareData.map(r => r.brand + '(' + r.specification + ')')},
+    series: [{
+      type: 'bar',
+      data: compareData.map(r => ({value: r.price_avg, itemStyle: {color: r.price_avg === minP ? '#43a047' : r.price_avg === maxP ? '#e53935' : '#1a73e8'}})),
+      label: {show: true, position: 'right', formatter: '{c}'}
+    }]
+  });
+  
+  window.onresize = () => { trendChart.resize(); compareChart.resize(); };
+}
+
+// 启动
+loadData();
+</script>
+</body>
+</html>
