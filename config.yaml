@@ -1,0 +1,15 @@
+name: POM Price Monitor
+description: POM塑料原料价格监控系统
+version: 1.0.0
+
+# 数据文件路径
+data_path: data/prices.json
+
+# 飞书通知配置（在GitHub Secrets中设置）
+feishu_webhook: FEISHU_WEBHOOK_URL
+
+# 爬虫配置
+scraper:
+  url: https://dc.oilchem.net/page/#/list?varietiesId=415&name=POM&businessType=2
+  username: hdgs
+  password: hdgs888
